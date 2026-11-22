@@ -12,6 +12,10 @@
 
 关键约束：计算合计与次数时**不枚举全部匹配路径**。
 归属有效期为 [起日, 止日)，归口同理（含起日、不含止日）。
+
+归属表 / 归口表允许"只有表头"（空底表）：语义上等于没有任何源行，
+拨款全部按漏计处理，断裂层判断与有数据时一致（分包重跑依赖此行为）。
+拨款表只有表头仍是输入错误。
 """
 
 from __future__ import annotations
@@ -140,8 +144,17 @@ def _decode(raw: bytes, label: str) -> str:
         raise InputError([(label, None, f"文件不是合法的 UTF-8 编码（{exc.reason}）")])
 
 
-def _parse_csv(raw: bytes, label: str, expected: List[str]) -> List[Dict[str, str]]:
-    """通用 CSV 解析：校验表头、列数，返回带物理行号的字典列表。"""
+def _parse_csv(
+    raw: bytes,
+    label: str,
+    expected: List[str],
+    allow_empty: bool = False,
+) -> List[Dict[str, str]]:
+    """通用 CSV 解析：校验表头、列数，返回带物理行号的字典列表。
+
+    allow_empty=True 时允许"只有表头"（空底表），返回空列表；
+    连表头都没有（空文件）仍然报错。
+    """
     text = _decode(raw, label)
     if "\x00" in text:
         raise InputError([(label, None, "文件包含 NUL 字节，疑似不是 CSV 文本")])
@@ -172,6 +185,8 @@ def _parse_csv(raw: bytes, label: str, expected: List[str]) -> List[Dict[str, st
         record["_csv_line"] = physical  # type: ignore[assignment]
         records.append(record)
     if not records:
+        if allow_empty:
+            return records  # 空底表：只有表头，没有数据行
         raise InputError([(label, None, "只有表头，没有数据行")])
     return records
 
@@ -233,9 +248,10 @@ def _parse_interval_table(
     raw: bytes,
     label: str,
     columns: List[str],
+    allow_empty: bool = False,
 ) -> Tuple[List[dict], List[Tuple[str, Optional[int], str]]]:
     """解析归属/归口表，返回 (记录, 错误)，行号唯一性由调用方按表校验。"""
-    records = _parse_csv(raw, label, columns)
+    records = _parse_csv(raw, label, columns, allow_empty=allow_empty)
     errors: List[Tuple[str, Optional[int], str]] = []
     parsed: List[dict] = []
     seen: Dict[int, int] = {}
@@ -264,7 +280,8 @@ def _parse_interval_table(
 
 
 def parse_attributions(raw: bytes, label: str = ATTRIBUTION_FILE) -> List[AttributionRow]:
-    parsed, errors = _parse_interval_table(raw, label, ATTRIBUTION_COLUMNS)
+    parsed, errors = _parse_interval_table(raw, label, ATTRIBUTION_COLUMNS,
+                                           allow_empty=True)
     rows: List[AttributionRow] = []
     for item in parsed:
         rec, line = item["rec"], item["line"]
@@ -282,7 +299,8 @@ def parse_attributions(raw: bytes, label: str = ATTRIBUTION_FILE) -> List[Attrib
 
 
 def parse_jurisdictions(raw: bytes, label: str = JURISDICTION_FILE) -> List[JurisdictionRow]:
-    parsed, errors = _parse_interval_table(raw, label, JURISDICTION_COLUMNS)
+    parsed, errors = _parse_interval_table(raw, label, JURISDICTION_COLUMNS,
+                                           allow_empty=True)
     rows: List[JurisdictionRow] = []
     for item in parsed:
         rec, line = item["rec"], item["line"]
@@ -307,17 +325,16 @@ def _active(rows: List[Tuple[date, date, object]], day: date) -> List[object]:
     return [obj for start, end, obj in rows if start <= day < end]
 
 
-def reconcile(
+def parse_all(
     grants_raw: bytes,
     attributions_raw: bytes,
     jurisdictions_raw: bytes,
-) -> Report:
-    """执行两层内连接核对。
+) -> Tuple[List[Grant], List[AttributionRow], List[JurisdictionRow]]:
+    """解析并校验三份 CSV。
 
-    合计与次数的复杂度为 O(匹配到的归属行数 + 这些学院下的归口行数)，
-    与完整路径总数（两者乘积）无关，因此不枚举任何匹配路径。
+    三个文件一起解析，汇总全部错误后一次性抛出 InputError（整次退回，
+    调用方不应产生任何部分结果）。
     """
-    # 三个文件一起解析，汇总全部错误后一次性退回
     errors: List[Tuple[str, Optional[int], str]] = []
     grants: List[Grant] = []
     attributions: List[AttributionRow] = []
@@ -333,6 +350,22 @@ def reconcile(
             errors.extend(exc.errors)
     if errors:
         raise InputError(errors)
+    return grants, attributions, jurisdictions
+
+
+def reconcile(
+    grants_raw: bytes,
+    attributions_raw: bytes,
+    jurisdictions_raw: bytes,
+) -> Report:
+    """执行两层内连接核对。
+
+    合计与次数的复杂度为 O(匹配到的归属行数 + 这些学院下的归口行数)，
+    与完整路径总数（两者乘积）无关，因此不枚举任何匹配路径。
+    """
+    grants, attributions, jurisdictions = parse_all(
+        grants_raw, attributions_raw, jurisdictions_raw
+    )
 
     # 归属：项目号 -> [(起日, 止日, 行)]；归口：学院码 -> [(起日, 止日, 行)]
     attr_index: Dict[str, List[Tuple[date, date, AttributionRow]]] = {}

@@ -23,6 +23,32 @@
 </div>
 
 <div class="card">
+  <h2>分包下发（同一批拨款交给多个小组核对）</h2>
+  <form method="post" action="/split" enctype="multipart/form-data">
+    <div class="upload-row">
+      <label for="split-grants">拨款表</label>
+      <input id="split-grants" name="grants" type="file" accept=".csv,text/csv" required>
+    </div>
+    <div class="upload-row">
+      <label for="split-attributions">归属表</label>
+      <input id="split-attributions" name="attributions" type="file" accept=".csv,text/csv" required>
+    </div>
+    <div class="upload-row">
+      <label for="split-jurisdictions">归口表</label>
+      <input id="split-jurisdictions" name="jurisdictions" type="file" accept=".csv,text/csv" required>
+    </div>
+    <button type="submit">分包并下载 ZIP</button>
+  </form>
+  <p class="muted" style="margin-top:16px">
+    每笔拨款只进一包；包内带上拨款日命中的全部归属行和经它们命中的全部归口行。
+    共用源行（含间接共用）的拨款必在同一包，互不关联的拨款分开。
+    每包一个文件夹、各含三份 CSV，可回到上方核对入口单独重跑：
+    逐笔入表次数、漏计断层、多计证据与整批一致，各包单位合计相加等于整批合计。
+    某张底表只有表头也会保留（对应原来的漏计断层判断）。任一文件有误则整批不出包。
+  </p>
+</div>
+
+<div class="card">
   <h2>列格式要求</h2>
   <table>
     <tr><th>文件</th><th>列（按顺序）</th></tr>

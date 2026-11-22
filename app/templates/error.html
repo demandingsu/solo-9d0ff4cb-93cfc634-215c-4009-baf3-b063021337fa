@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block body %}
 <div class="alert">
-  <h2>输入有误，本次核对已整次退回</h2>
-  <p class="muted">未产生任何部分结果。请修正下列问题后重新上传三份文件：</p>
+  <h2>{{ heading or "输入有误，本次核对已整次退回" }}</h2>
+  <p class="muted">{{ note or "未产生任何部分结果。请修正下列问题后重新上传三份文件：" }}</p>
   <ul>
     {% for label, line, msg in errors %}
     <li>
